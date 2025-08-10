@@ -1,0 +1,206 @@
+ObjC.import('Foundation');
+
+var app = Application.currentApplication();
+app.includeStandardAdditions = true;
+
+function log(s) {
+  try { console.log(String(s)); } catch (e) {}
+}
+
+function getenv(key, defVal) {
+  var env = $.NSProcessInfo.processInfo.environment;
+  var v = env.objectForKey($(String(key)));
+  return v ? String(v.js) : (defVal === undefined ? '' : defVal);
+}
+
+function shellEscapeSingleQuotes(s) {
+  return String(s).replace(/'/g, "'\\''");
+}
+
+function httpPostJsonCurl(url, headersObj, bodyObj) {
+  var headers = headersObj || {};
+  var headerFlags = [];
+  for (var k in headers) {
+    if (headers.hasOwnProperty(k)) {
+      headerFlags.push("-H '" + shellEscapeSingleQuotes(k + ': ' + String(headers[k])) + "'");
+    }
+  }
+  headerFlags = headerFlags.join(' ');
+  var bodyStr = JSON.stringify(bodyObj);
+  var escapedBody = shellEscapeSingleQuotes(bodyStr);
+  var cmd = "printf %s '" + escapedBody + "' | /usr/bin/curl -sS -X POST " + headerFlags + " --data @- '" + shellEscapeSingleQuotes(url) + "'";
+  var out = app.doShellScript(cmd);
+  return JSON.parse(out);
+}
+
+function nowISO() { return new Date().toISOString(); }
+
+function buildPrompt(text, defaults) {
+  var ctx = {
+    now_iso: nowISO(),
+    timezone: defaults.defaultTimezone || 'local',
+    default_duration_minutes: Number(defaults.defaultDuration) || 60,
+    alerts_minutes_before_start: String(defaults.alerts || '').split(',').map(function(s){return Number(String(s).trim());}).filter(function(n){return !isNaN(n);} ),
+    default_calendar: defaults.defaultCalendar || ''
+  };
+  var schema = '{\n  "title": "string",\n  "start": "ISO-8601 datetime with timezone",\n  "end": "ISO-8601 datetime with timezone",\n  "all_day": false,\n  "duration_minutes": 60,\n  "timezone": "IANA name",\n  "location": "string",\n  "attendees": ["email@domain.com"],\n  "notes": "string",\n  "alerts_minutes_before_start": [10,60],\n  "calendar": "string"\n}';
+  return 'Extract a single calendar event from the text. Use the following JSON schema and output JSON only.' + '\n\n' +
+         'Resolve relative dates using now_iso and timezone. Use ISO-8601 with timezone offsets.' + '\n\n' +
+         'If end missing, use duration or default_duration_minutes. If time missing, infer reasonable 09:00 local time.' + '\n\n' +
+         'JSON schema:' + '\n' + schema + '\n\n' +
+         'Context:' + '\n' + JSON.stringify(ctx, null, 2) + '\n\n' +
+         'Text:' + '\n' + text;
+}
+
+function parseJSDateOrThrow(s) {
+  var d = new Date(String(s));
+  if (isNaN(d.getTime())) throw new Error('Invalid date: ' + s);
+  return d;
+}
+
+function ensureDates(event, defaults) {
+  if (!event.start) throw new Error('Missing start');
+  var startDate = parseJSDateOrThrow(event.start);
+  var endDate;
+  if (event.end) {
+    endDate = parseJSDateOrThrow(event.end);
+  } else {
+    var durationMinutes = Number(event.duration_minutes || defaults.defaultDuration || 60);
+    endDate = new Date(startDate.getTime() + durationMinutes * 60000);
+  }
+  return { startDate: startDate, endDate: endDate };
+}
+
+function prefer(v, fallback) {
+  return (v === undefined || v === null || v === '') ? fallback : v;
+}
+
+function callOllama(model, prompt) {
+  var url = 'http://localhost:11434/api/generate';
+  var body = { model: model, prompt: prompt, stream: false, format: 'json' };
+  var res = httpPostJsonCurl(url, { 'Content-Type': 'application/json' }, body);
+  if (res && res.response) {
+    return JSON.parse(res.response);
+  }
+  throw new Error('Ollama returned no response');
+}
+
+function callOpenAI(endpointBase, apiKey, model, prompt) {
+  var url = endpointBase.replace(/\/$/, '') + '/chat/completions';
+  var body = {
+    model: model,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: 'You are a helpful assistant that extracts calendar events as strict JSON only. No extra text.' },
+      { role: 'user', content: prompt }
+    ]
+  };
+  var res = httpPostJsonCurl(url, { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey }, body);
+  var content = res && res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content;
+  if (!content) throw new Error('OpenAI invalid response');
+  return JSON.parse(content);
+}
+
+function createCalendarEvent(ev, calendarName) {
+  var dates = ensureDates(ev, {});
+  var title = prefer(ev.title, 'New Event');
+  var startEpoch = Math.floor(dates.startDate.getTime() / 1000);
+  var endEpoch = Math.floor(dates.endDate.getTime() / 1000);
+  var calName = calendarName ? String(calendarName) : '';
+  var loc = ev.location ? String(ev.location) : '';
+  var notes = ev.notes ? String(ev.notes) : '';
+
+  function asQuote(s) { return '"' + String(s).replace(/"/g, '\\"') + '"'; }
+
+  var asSource = (
+    'set theTitle to ' + asQuote(title) + '\n' +
+    'set startEpoch to ' + String(startEpoch) + '\n' +
+    'set endEpoch to ' + String(endEpoch) + '\n' +
+    'set calName to ' + asQuote(calName) + '\n' +
+    'set theLocation to ' + asQuote(loc) + '\n' +
+    'set theNotes to ' + asQuote(notes) + '\n' +
+    'set nowEpoch to (do shell script "date +%s") as integer\n' +
+    'set startDate to (current date)\n' +
+    'set startDate to startDate + (startEpoch - nowEpoch)\n' +
+    'set endDate to (current date)\n' +
+    'set endDate to endDate + (endEpoch - nowEpoch)\n' +
+    'tell application "Calendar"\n' +
+    '  if (calName is not missing value and calName is not "") then\n' +
+    '    try\n' +
+    '      set theCal to first calendar whose name is calName\n' +
+    '    on error\n' +
+    '      set theCal to first calendar\n' +
+    '    end try\n' +
+    '  else\n' +
+    '    set theCal to first calendar\n' +
+    '  end if\n' +
+    '  tell theCal\n' +
+    '    make new event with properties {summary:theTitle, start date:startDate, end date:endDate, location:theLocation, description:theNotes}\n' +
+    '  end tell\n' +
+    'end tell\n'
+  );
+
+  // Write AppleScript source to a temp file and execute
+  var tmpDir = ObjC.unwrap($.NSTemporaryDirectory());
+  var tmpPath = tmpDir + 'ical_add_' + String(Date.now()) + '.applescript';
+  $(asSource).writeToFileAtomicallyEncodingError($(tmpPath), true, $.NSUTF8StringEncoding, null);
+  function shesc(s){ return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+  var cmd = '/usr/bin/osascript -l AppleScript ' + shesc(tmpPath);
+  var out = app.doShellScript(cmd);
+  return { summary: function(){return title;}, startDate: function(){return dates.startDate;}, endDate: function(){return dates.endDate;} };
+}
+
+function main() {
+  var provider = getenv('POPCLIP_OPTION_PROVIDER', 'Ollama (local)');
+  var apiKey = getenv('POPCLIP_OPTION_API_KEY', '');
+  var endpoint = getenv('POPCLIP_OPTION_ENDPOINT_URL', 'https://api.openai.com/v1');
+  var model = getenv('POPCLIP_OPTION_MODEL', 'gpt-4o-mini');
+  var ollamaModel = getenv('POPCLIP_OPTION_OLLAMA_MODEL', 'llama3.1:8b');
+  var defaultCalendar = getenv('POPCLIP_OPTION_DEFAULT_CALENDAR', '');
+  var defaultDuration = getenv('POPCLIP_OPTION_DEFAULT_DURATION_MINUTES', '60');
+  var defaultTimezone = getenv('POPCLIP_OPTION_DEFAULT_TIMEZONE', '');
+  var alertsStr = getenv('POPCLIP_OPTION_ALERTS_MINUTES_BEFORE_START', '60,10');
+  var alerts = alertsStr.split(',').map(function(s){return Number(String(s).trim());}).filter(function(n){return !isNaN(n);});
+  var text = getenv('POPCLIP_TEXT', '');
+  if (!text) { throw new Error('No selected text'); }
+
+  log('STEP-1: Inputs ok. provider=' + provider + ', model=' + (provider.indexOf('Ollama') === 0 ? ollamaModel : model) + ', textLen=' + text.length);
+
+  var prompt = buildPrompt(text, { defaultCalendar: defaultCalendar, defaultDuration: defaultDuration, defaultTimezone: defaultTimezone, alerts: alerts });
+  var eventJson = null;
+  try {
+    if (provider.indexOf('Ollama') === 0) {
+      eventJson = callOllama(ollamaModel, prompt);
+    } else {
+      eventJson = callOpenAI(endpoint, apiKey, model, prompt);
+    }
+    log('STEP-3: LLM responded.');
+  } catch (e) {
+    log('STEP-3: LLM failed (' + (e && e.message ? e.message : e) + '). Falling back to simple event.');
+    var now = new Date();
+    var end = new Date(now.getTime() + Number(defaultDuration || 60) * 60000);
+    eventJson = { title: text.slice(0, 120), start: now.toISOString(), end: end.toISOString() };
+  }
+
+  var ev = {
+    title: eventJson.title || 'New Event',
+    start: eventJson.start,
+    end: eventJson.end,
+    all_day: !!eventJson.all_day,
+    duration_minutes: eventJson.duration_minutes,
+    timezone: eventJson.timezone,
+    location: eventJson.location,
+    attendees: Array.isArray(eventJson.attendees) ? eventJson.attendees : [],
+    notes: eventJson.notes,
+    alerts_minutes_before_start: Array.isArray(eventJson.alerts_minutes_before_start) ? eventJson.alerts_minutes_before_start : alerts,
+    calendar: eventJson.calendar || defaultCalendar
+  };
+
+  log('STEP-4: Creating event. title=' + ev.title + ', start=' + ev.start + ', end=' + (ev.end || ('+' + ev.duration_minutes + 'm')) + ', cal=' + (ev.calendar || '(default)'));
+  var created = createCalendarEvent(ev, ev.calendar);
+  var msg = 'Event created: ' + created.summary() + ' (' + created.startDate() + ' - ' + created.endDate() + ')';
+  log(msg);
+  try { app.displayNotification(msg, { withTitle: 'iCal Assistant' }); } catch (e) {}
+}
+
+try { main(); } catch (e) { log('Error: ' + (e && e.message ? e.message : e)); throw e; }

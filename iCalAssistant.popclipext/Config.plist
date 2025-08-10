@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Name</key>
+  <string>iCal Assistant</string>
+  <key>Identifier</key>
+  <string>com.yqi.popclip.icalassistant</string>
+  <key>Icon File</key>
+  <string>icon.png</string>
+  <key>Options</key>
+  <array>
+    <dict>
+      <key>Identifier</key>
+      <string>provider</string>
+      <key>Label</key>
+      <string>Provider</string>
+      <key>Type</key>
+      <string>multiple</string>
+      <key>Values</key>
+      <array>
+        <string>Ollama (local)</string>
+        <string>OpenAI</string>
+        <string>Custom (OpenAI-compatible)</string>
+      </array>
+      <key>DefaultValue</key>
+      <string>Ollama (local)</string>
+    </dict>
+    <dict>
+      <key>Identifier</key>
+      <string>api_key</string>
+      <key>Label</key>
+      <string>API Key</string>
+      <key>Type</key>
+      <string>secret</string>
+    </dict>
+    <dict>
+      <key>Identifier</key>
+      <string>endpoint_url</string>
+      <key>Label</key>
+      <string>Endpoint URL</string>
+      <key>Type</key>
+      <string>string</string>
+      <key>DefaultValue</key>
+      <string>https://api.openai.com/v1</string>
+    </dict>
+    <dict>
+      <key>Identifier</key>
+      <string>model</string>
+      <key>Label</key>
+      <string>Model</string>
+      <key>Type</key>
+      <string>string</string>
+      <key>DefaultValue</key>
+      <string>gpt-4o-mini</string>
+    </dict>
+    <dict>
+      <key>Identifier</key>
+      <string>ollama_model</string>
+      <key>Label</key>
+      <string>Ollama Model</string>
+      <key>Type</key>
+      <string>string</string>
+      <key>DefaultValue</key>
+      <string>deepseek-r1:latest</string>
+    </dict>
+    <dict>
+      <key>Identifier</key>
+      <string>default_calendar</string>
+      <key>Label</key>
+      <string>Default Calendar</string>
+      <key>Type</key>
+      <string>string</string>
+    </dict>
+    <dict>
+      <key>Identifier</key>
+      <string>default_duration_minutes</string>
+      <key>Label</key>
+      <string>Default Duration (minutes)</string>
+      <key>Type</key>
+      <string>string</string>
+      <key>DefaultValue</key>
+      <string>60</string>
+    </dict>
+    <dict>
+      <key>Identifier</key>
+      <string>default_timezone</string>
+      <key>Label</key>
+      <string>Default Timezone (IANA)</string>
+      <key>Type</key>
+      <string>string</string>
+    </dict>
+    <dict>
+      <key>Identifier</key>
+      <string>alerts_minutes_before_start</string>
+      <key>Label</key>
+      <string>Alerts (minutes, comma-separated)</string>
+      <key>Type</key>
+      <string>string</string>
+      <key>DefaultValue</key>
+      <string>60,10</string>
+    </dict>
+    <dict>
+      <key>Identifier</key>
+      <string>confirm_before_create</string>
+      <key>Label</key>
+      <string>Confirm before create</string>
+      <key>Type</key>
+      <string>boolean</string>
+      <key>DefaultValue</key>
+      <true/>
+    </dict>
+    <dict>
+      <key>Identifier</key>
+      <string>debug_logging</string>
+      <key>Label</key>
+      <string>Enable debug logging</string>
+      <key>Type</key>
+      <string>boolean</string>
+      <key>DefaultValue</key>
+      <false/>
+    </dict>
+  </array>
+  <key>Actions</key>
+  <array>
+    <dict>
+      <key>Title</key>
+      <string>Add to Calendar</string>
+      <key>Icon File</key>
+      <string>icon.png</string>
+      <key>Before</key>
+      <string>copy</string>
+      <key>After</key>
+      <string>show-status</string>
+      <key>Shell Script File</key>
+      <string>add_event.sh</string>
+    </dict>
+  </array>
+</dict>
+</plist>
