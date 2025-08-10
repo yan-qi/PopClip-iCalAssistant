@@ -1,0 +1,37 @@
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# macOS metadata on external/remote volumes
+.Spotlight-V100
+.Trashes
+.fseventsd
+.apdisk
+.DocumentRevisions-V100
+.TemporaryItems
+Icon?
+
+# Editor settings and workspace files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.orig
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Archives and temporary files
+*.zip
+*.tar
+*.tar.gz
+*.tmp
+
+# Node (if present)
+node_modules/
