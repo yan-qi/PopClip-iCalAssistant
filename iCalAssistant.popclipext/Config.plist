@@ -6,8 +6,6 @@
   <string>iCal Assistant</string>
   <key>Identifier</key>
   <string>com.yqi.popclip.icalassistant</string>
-  <key>Icon File</key>
-  <string>icon.png</string>
   <key>Options</key>
   <array>
     <dict>
@@ -125,9 +123,7 @@
   <array>
     <dict>
       <key>Title</key>
-      <string>Add to Calendar</string>
-      <key>Icon File</key>
-      <string>icon.png</string>
+      <string>📅</string>
       <key>Before</key>
       <string>copy</string>
       <key>After</key>
